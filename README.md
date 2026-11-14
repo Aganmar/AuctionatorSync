@@ -1,6 +1,6 @@
-<img src="Media/ScanShare_400.png" width="96" align="right" alt="">
+<p align="center"><img src="Media/ScanShare_400.png" width="128" alt="ScanShare icon"></p>
 
-# ScanShare
+<h1 align="center">ScanShare</h1>
 
 Share [Auctionator](https://www.curseforge.com/wow/addons/auctionator) auction house prices between players in **World of Warcraft: Forever** — so everyone's price data stays fresh even on days they don't scan.
 
