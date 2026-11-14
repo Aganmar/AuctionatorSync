@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 Aganmar. Licensed under the GNU General Public License v3.0 (see LICENSE).
 -- ScanShare options page (Settings > AddOns > ScanShare, or /scanshare)
 local _, ns = ...
 

@@ -1,3 +1,4 @@
+-- Copyright (C) 2026 Aganmar. Licensed under the GNU General Public License v3.0 (see LICENSE).
 -- ScanShare: shares Auctionator's price database between your characters over hidden addon whispers.
 -- The side with the newer scan sends every item seen since the other side's newest data (compressed);
 -- the receiver writes an item only if it is newer than what it already has, dated to the day it was seen.

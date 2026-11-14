@@ -55,6 +55,10 @@ Copy the `ScanShare` folder into `World of Warcraft\_forever_\Interface\AddOns\`
 
 Only one player answers a query (others stay quiet once an equal or newer scan has been announced), and data always goes by whisper, never over the shared channel.
 
+## License
+
+ScanShare is free software under the [GNU General Public License v3.0](LICENSE).
+
 ## Credits
 
 - [LibDeflate](https://github.com/SafeteeWoW/LibDeflate) by Haoqian He — zlib License (see `Libs/LibDeflate/LICENSE.txt`).
