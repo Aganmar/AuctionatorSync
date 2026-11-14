@@ -1,12 +1,19 @@
 name: Release
 
-# Publish a release on GitHub (tag e.g. v0.7.0); this builds the zip and attaches it.
+# Publish a release on GitHub (tag e.g. v0.7.0): this builds the zip and a release.json
+# (flavor/interface metadata used by WowUp and other addon managers) and attaches both.
+# "Run workflow" re-attaches them to an existing release tag.
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag (e.g. v0.6.0)"
+        required: true
 
 concurrency:
-  group: release-${{ github.event.release.tag_name }}
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
 
 permissions:
   contents: write
@@ -16,20 +23,42 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
 
-      - name: Build add-on zip
+      - name: Build add-on zip and release.json
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
-          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          VERSION="${{ github.event.release.tag_name || inputs.tag }}"
+          ZIP="ScanShare-${VERSION}.zip"
+          INTERFACE=$(grep -m1 '^## Interface:' ScanShare.toc | sed 's/[^0-9,]//g' | cut -d, -f1)
           mkdir -p build/ScanShare/Media
           cp ScanShare.toc ScanShare.lua Options.lua LICENSE build/ScanShare/
           cp -r Libs build/ScanShare/
           cp Media/icon.tga build/ScanShare/Media/
-          (cd build && zip -r "../ScanShare-${VERSION}.zip" ScanShare)
-          echo "ZIP=ScanShare-${VERSION}.zip" >> "$GITHUB_ENV"
+          (cd build && zip -r "../${ZIP}" ScanShare)
+          cat > release.json <<JSON
+          {
+            "releases": [
+              {
+                "name": "ScanShare",
+                "version": "${VERSION}",
+                "filename": "${ZIP}",
+                "nolib": false,
+                "metadata": [
+                  { "flavor": "forever", "interface": ${INTERFACE} }
+                ]
+              }
+            ]
+          }
+          JSON
+          cat release.json
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "ZIP=${ZIP}" >> "$GITHUB_ENV"
 
-      - name: Attach zip to the release
+      - name: Attach zip and release.json to the release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.VERSION }}
-          files: ${{ env.ZIP }}
+          files: |
+            ${{ env.ZIP }}
+            release.json
