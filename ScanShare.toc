@@ -1,6 +1,9 @@
 ## Interface: 16001
 ## Title: ScanShare
-## Notes: Shares Auctionator prices between your characters
+## Notes: Shares Auctionator prices between players
+## IconTexture: Interface\AddOns\ScanShare\Media\icon
+## Category: Auction & Economy
+## Author: Aganmar
 ## Version: 0.6.0
 ## Dependencies: Auctionator
 ## OptionalDeps: EllesmereUI, EllesmereUIBlizzardSkin

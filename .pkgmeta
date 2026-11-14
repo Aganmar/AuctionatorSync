@@ -1,0 +1,11 @@
+package-as: ScanShare
+
+ignore:
+  - README.md
+  - CHANGELOG.md
+  - .github
+  - Media/ScanShare_400.png
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
