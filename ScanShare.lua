@@ -111,7 +111,10 @@ local function pump()
   local m = queue[1]
   if not m then if ticker then ticker:Cancel(); ticker = nil end; return end
   local chan, target = "WHISPER", m[2]
-  if target == "#channel" then
+  if target == "#guild" then
+    if not IsInGuild() then table.remove(queue, 1); return end
+    chan, target = "GUILD", nil
+  elseif target == "#channel" then
     local id = GetChannelName(CHANNEL)
     if not id or id == 0 then table.remove(queue, 1); return end
     chan, target = "CHANNEL", id
@@ -124,7 +127,9 @@ local function pump()
     if m[3] then m[3]() end
   end
 end
+local paused = false
 local function send(msg, target, onSent)
+  if paused then return end
   -- control messages jump ahead of queued data chunks
   if msg:sub(1, 1) ~= "D" and msg:sub(1, 1) ~= "E" then table.insert(queue, 1, { msg, target, onSent })
   else queue[#queue + 1] = { msg, target, onSent } end
@@ -146,6 +151,48 @@ end
 local function blocked(name)
   local s = short(name)
   return sessionBlocked[s] or (DB.blocked and DB.blocked[s] and true) or false
+end
+
+-- Who we sync with: "public" (anyone on the realm channel), "guild", or "trusted" (partner + trusted list only).
+local function scope() return DB.scope or "public" end
+
+local guildCache, guildCacheAt = {}, 0
+local function inGuild(name)
+  if not IsInGuild() then return false end
+  local s = short(name)
+  if C_GuildInfo and C_GuildInfo.MemberExistsByName then
+    local ok, yes = pcall(C_GuildInfo.MemberExistsByName, Ambiguate(name, "none"))
+    if ok and yes then return true end
+  end
+  if GetTime() - guildCacheAt > 60 and GetNumGuildMembers then
+    guildCache, guildCacheAt = {}, GetTime()
+    for i = 1, GetNumGuildMembers() do
+      local n = GetGuildRosterInfo(i)
+      if n then guildCache[short(n)] = true end
+    end
+  end
+  return guildCache[s] or false
+end
+
+local function allowed(name)
+  if blocked(name) then return false end
+  if trusted(name) then return true end
+  local sc = scope()
+  if sc == "public" then return true end
+  if sc == "guild" then return inGuild(name) end
+  return false
+end
+
+-- Send a Q/N-style message to everyone we sync with under the current scope.
+local function broadcast(msg)
+  local sc = scope()
+  if sc == "public" then send(msg, "#channel")
+  elseif sc == "guild" then send(msg, "#guild") end
+  -- partner + trusted always get it directly
+  local done = {}
+  local function direct(name) local k = short(name); if not done[k] then done[k] = true; send(msg, name) end end
+  if DB.partner then direct(DB.partner) end
+  for _, display in pairs(DB.trusted or {}) do if type(display) == "string" then direct(display) end end
 end
 
 -- AH type of the last scan: "F" = your faction's AH, "N" = neutral (goblin) AH.
@@ -184,9 +231,11 @@ local function isMe(name, msg)
   return false
 end
 
-local function announce()
+local function announce(via)
   local db = priceDB()
-  if db and scanTime() > 0 then send(("N:%d:%d:%s"):format(scanTime(), newestDay(db), myAH()), "#channel") end
+  if not (db and scanTime() > 0) then return end
+  local msg = ("N:%d:%d:%s"):format(scanTime(), newestDay(db), myAH())
+  if via == "GUILD" then send(msg, "#guild") elseif via == "CHANNEL" then send(msg, "#channel") else broadcast(msg) end
 end
 
 local function hello(target, answer)
@@ -341,8 +390,8 @@ end
 -- Public channel: N = "I have data from <scan>", Q = "anyone newer than <have>?"
 local lastAnnounceSeen = 0
 local lastHeard, lastAnswered = {}, 0
-local function onChannel(msg, sender)
-  if blocked(sender) then return end
+local function onChannel(msg, sender, direct, via)
+  if not allowed(sender) then return end
   local kind = msg:sub(1, 1)
   local s = short(sender) .. kind
   if lastHeard[s] and GetTime() - lastHeard[s] < 60 then return end
@@ -360,19 +409,27 @@ local function onChannel(msg, sender)
     end
   elseif kind == "Q" then
     local their = tonumber(msg:match("^Q:(%d+)")) or 0
+    if direct then
+      -- asked us directly (partner/trusted): answer directly, no channel etiquette needed
+      local db = priceDB()
+      if db and scanTime() > their then send(("N:%d:%d:%s"):format(scanTime(), newestDay(db), myAH()), sender) end
+      return
+    end
     if scanTime() > their and GetTime() - lastAnswered > 30 then
       lastAnswered = GetTime()
       local mine = scanTime()
       lastAnnounceSeen = 0
       C_Timer.After(1 + math.random() * 3, function()
-        if lastAnnounceSeen < mine then announce() end   -- someone with equal/newer data already answered
+        if lastAnnounceSeen < mine then announce(via) end   -- someone with equal/newer data already answered
       end)
     end
   end
 end
 
 local function onMessage(msg, sender)
-  if blocked(sender) then return end
+  if not allowed(sender) then return end
+  local k0 = msg:sub(1, 1)
+  if k0 == "N" or k0 == "Q" then return onChannel(msg, sender, true) end   -- direct announce/query (trusted mode)
   local kind = msg:sub(1, 1)
   if kind == "H" or kind == "A" then
     peers[short(sender)] = sender
@@ -431,6 +488,7 @@ f:SetScript("OnEvent", function(_, ev, a1, a2, a3, a4)
     ScanShareDB = ScanShareDB or {}
     DB = ScanShareDB
     DB.trusted, DB.blocked, DB.pending = DB.trusted or {}, DB.blocked or {}, DB.pending or {}
+    for k, v in pairs(DB.trusted) do if v == true then DB.trusted[k] = k end end   -- older versions stored true
     local cutoff = time() - 86400
     for k, p in pairs(DB.pending) do if p.at < cutoff then DB.pending[k] = nil end end
     for k, b in pairs(DB.blocked) do if type(b) == "table" and b.auto and time() - b.at > AUTOBLOCK_TIME then DB.blocked[k] = nil end end
@@ -438,8 +496,9 @@ f:SetScript("OnEvent", function(_, ev, a1, a2, a3, a4)
     for k, st in pairs(DB.strikes) do if time() - st.last > STRIKE_WINDOW then DB.strikes[k] = nil end end
   elseif ev == "PLAYER_LOGIN" then
     C_ChatInfo.RegisterAddonMessagePrefix(PREFIX)
-    C_Timer.After(10, function() if DB.partner then hello(DB.partner) end end)
-    if DB.public ~= false then
+    if DB.scope == nil and DB.public == false then DB.scope = "trusted" end   -- migrate old setting
+    C_Timer.After(10, function() if not paused then broadcast("Q:" .. haveTime()) end end)
+    if scope() == "public" then
       C_Timer.After(6, function()
         JoinTemporaryChannel(CHANNEL)
         C_Timer.After(2, function()
@@ -448,20 +507,20 @@ f:SetScript("OnEvent", function(_, ev, a1, a2, a3, a4)
             if cf and not DB.debug and ChatFrame_RemoveChannel then ChatFrame_RemoveChannel(cf, CHANNEL) end
           end
           if DB.debug and ChatFrame_AddChannel then ChatFrame_AddChannel(DEFAULT_CHAT_FRAME, CHANNEL) end
-          send("Q:" .. haveTime(), "#channel")
         end)
       end)
     end
     local A = Auctionator and Auctionator.API and Auctionator.API.v1
     if A and A.RegisterForDBUpdate then
       pcall(A.RegisterForDBUpdate, "ScanShare", function()
-        if incoming then return end   -- our own writes don't trigger a push
+        if incoming or paused then return end   -- our own writes don't trigger a push
         if currentAH then DB.scanAH = currentAH end
         C_Timer.After(3, function()
+          announce()
           local sent = {}
-          if DB.public ~= false then announce() end
-          if DB.partner then hello(DB.partner); sent[short(DB.partner)] = true end
-          for s, full in pairs(peers) do if not sent[s] then hello(full) end end
+          if DB.partner then sent[short(DB.partner)] = true end
+          for _, d in pairs(DB.trusted or {}) do if type(d) == "string" then sent[short(d)] = true end end
+          for s, full in pairs(peers) do if not sent[s] and allowed(full) then hello(full) end end
         end)
       end)
     end
@@ -472,8 +531,41 @@ f:SetScript("OnEvent", function(_, ev, a1, a2, a3, a4)
     currentAH = nil
   elseif ev == "CHAT_MSG_ADDON" and a1 == PREFIX and a4 and not isMe(a4, a2) then
     if a3 == "WHISPER" then L("<-", "W", a4, a2); onMessage(a2, a4)
-    elseif a3 == "CHANNEL" then L("<-", "CH", a4, a2); onChannel(a2, a4) end
+    elseif a3 == "CHANNEL" and scope() == "public" then L("<-", "CH", a4, a2); onChannel(a2, a4, false, "CHANNEL")
+    elseif a3 == "GUILD" and scope() ~= "trusted" then L("<-", "G", a4, a2); onChannel(a2, a4, false, "GUILD") end
   end
+end)
+
+-- Pause in dungeons / raids / battlegrounds: stop listening and sending entirely.
+local INSTANCE_TYPES = { party = true, raid = true, pvp = true, arena = true, scenario = true }
+local function shouldPause()
+  if not DB or DB.pauseInstances == false then return false end
+  local inInstance, kind = IsInInstance()
+  return inInstance and INSTANCE_TYPES[kind] or false
+end
+local function setPaused(p)
+  p = p and true or false
+  if p == paused then return end
+  paused = p
+  if p then
+    f:UnregisterEvent("CHAT_MSG_ADDON")
+    for i = #queue, 1, -1 do queue[i] = nil end
+    if ticker then ticker:Cancel(); ticker = nil end
+    for i = #waiting, 1, -1 do waiting[i] = nil end
+    incoming, sending = nil, false
+    if DB.debug then P("Paused (instance)") end
+  else
+    f:RegisterEvent("CHAT_MSG_ADDON")
+    if DB.debug then P("Resumed") end
+    C_Timer.After(5, function() if not paused then broadcast("Q:" .. haveTime()) end end)
+  end
+end
+ns.IsPaused = function() return paused end
+ns.SetPauseInstances = function(on) DB.pauseInstances = on and true or false; setPaused(shouldPause()) end
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+f:HookScript("OnEvent", function(_, ev)
+  if ev == "PLAYER_ENTERING_WORLD" or ev == "ZONE_CHANGED_NEW_AREA" then setPaused(shouldPause()) end
 end)
 
 -- Hide "No player named X is currently playing" caused by pinging an offline partner.
@@ -506,14 +598,13 @@ function ns.Status()
     scanAH = myAH(),
     lastSync = ls,
     held = held,
-    state = incoming and ("receiving " .. incoming.got .. "/" .. (incoming.total or "?") .. " from " .. Ambiguate(incoming.from, "none"))
+    state = paused and "paused (in an instance)" or incoming and ("receiving " .. incoming.got .. "/" .. (incoming.total or "?") .. " from " .. Ambiguate(incoming.from, "none"))
       or (#queue > 0 and ("sending, " .. #queue .. " messages left")) or "idle",
   }
 end
 
 function ns.SyncNow()
-  if DB.public ~= false then send("Q:" .. haveTime(), "#channel") end
-  if DB.partner then hello(DB.partner) end
+  broadcast("Q:" .. haveTime())
 end
 
 function ns.SetDebug(on)
@@ -522,10 +613,14 @@ function ns.SetDebug(on)
   elseif ChatFrame_RemoveChannel then ChatFrame_RemoveChannel(DEFAULT_CHAT_FRAME, CHANNEL) end
 end
 
-function ns.SetPublic(on)
-  DB.public = on and true or false
-  if DB.public then JoinTemporaryChannel(CHANNEL) else LeaveChannelByName(CHANNEL) end
+function ns.SetScope(sc)
+  if sc ~= "public" and sc ~= "guild" and sc ~= "trusted" then return end
+  DB.scope = sc
+  DB.public = nil
+  if sc == "public" then JoinTemporaryChannel(CHANNEL)
+  elseif GetChannelName(CHANNEL) and GetChannelName(CHANNEL) > 0 then LeaveChannelByName(CHANNEL) end
 end
+ns.Scope = scope
 
 function ns.SetAH(pref) if pref == "faction" or pref == "neutral" or pref == "any" then DB.ahPref = pref end end
 
@@ -549,7 +644,7 @@ function ns.SetListed(list, name, on)
   name = (name and name ~= "") and name or targetName(false)
   if not name then return nil end
   local s = short(name)
-  DB[list][s] = on and true or nil
+  DB[list][s] = on and (list == "trusted" and Ambiguate(name, "none") or true) or nil
   if list == "blocked" and not on then sessionBlocked[s] = nil; DB.strikes[s] = nil end
   return Ambiguate(name, "none")
 end
@@ -582,16 +677,20 @@ SlashCmdList.SCANSHARE = function(msg)
   elseif cmd == "ah" then
     ns.SetAH(rest)
     P("Accepting " .. (DB.ahPref or "faction") .. " AH data · your last scan: " .. (myAH() == "N" and "neutral" or "faction") .. " AH")
+  elseif cmd == "instances" then
+    ns.SetPauseInstances(DB.pauseInstances == false)
+    P("Pause in dungeons/raids/battlegrounds: " .. (DB.pauseInstances ~= false and "on" or "off"))
   elseif cmd == "debug" then
     ns.SetDebug(not DB.debug); P("Debug " .. (DB.debug and "on - channel shown, messages logged" or "off"))
-  elseif cmd == "public" then
-    ns.SetPublic(DB.public == false); P("Public channel " .. (DB.public and "on" or "off"))
+  elseif cmd == "scope" or cmd == "with" then
+    ns.SetScope(rest)
+    P("Syncing with: " .. ({ public = "everyone", guild = "guild members", trusted = "partner & trusted only" })[scope()])
   elseif cmd == "status" then
     local st = ns.Status()
     P(("channel %s · partner %s · own scan %s · last sync %s%s · %s"):format(st.channel and ("#" .. st.channel) or "off",
       st.partner or "none", age(st.ownScan), st.lastSync and age(st.lastSync.at) or "never",
       st.lastSync and (" from " .. st.lastSync.from .. " (" .. st.lastSync.written .. ")") or "", st.state))
   else
-    P("/scanshare (options) · status · sync · ah faction/neutral/any · debug · public · partner [name|clear] · trust/untrust · block/unblock")
+    P("/scanshare (options) · status · sync · ah faction/neutral/any · scope public/guild/trusted · instances · debug · partner [name|clear] · trust/untrust · block/unblock")
   end
 end

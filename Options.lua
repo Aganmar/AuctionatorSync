@@ -51,7 +51,7 @@ local L, C = 16, 330          -- left / right column x
 local y = -16
 
 text(panel, "GameFontNormalLarge", L, y, "ScanShare"); y = y - 22
-text(panel, "GameFontDisableSmall", L, y, "Shares Auctionator prices with other players over a hidden channel. Your own newer scans are never overwritten."); y = y - 26
+text(panel, "GameFontDisableSmall", L, y, "Shares Auctionator prices with other players over hidden addon messages. Your own newer scans are never overwritten."); y = y - 26
 
 -- Status
 text(panel, "GameFontNormal", L, y, "Status"); y = y - 20
@@ -67,7 +67,13 @@ y = y - 36
 
 -- Settings
 text(panel, "GameFontNormal", L, y, "Settings"); y = y - 22
-check(panel, "Public channel (find other players automatically)", L + 4, y, function() return ns.GetDB().public ~= false end, ns.SetPublic); y = y - 26
+text(panel, "GameFontHighlight", L + 8, y - 4, "Sync with:")
+for i, opt in ipairs({ { "public", "Everyone" }, { "guild", "Guild only" }, { "trusted", "Partner & trusted only" } }) do
+  check(panel, opt[2], L + 150 + (i - 1) * 110, y, function() return ns.Scope() == opt[1] end, function() ns.SetScope(opt[1]) end)
+end
+y = y - 22
+text(panel, "GameFontDisableSmall", L + 8, y, "Your partner and trusted characters are always included."); y = y - 22
+check(panel, "Pause in dungeons, raids & battlegrounds", L + 4, y, function() return ns.GetDB().pauseInstances ~= false end, ns.SetPauseInstances); y = y - 26
 check(panel, "Debug (show the channel and log every message in chat)", L + 4, y, function() return ns.GetDB().debug end, ns.SetDebug); y = y - 32
 
 text(panel, "GameFontHighlight", L + 8, y - 4, "Accept AH data from:")
@@ -132,7 +138,9 @@ function panel.Refresh()
   if not DB or not panel:IsShown() then return end
   local st = ns.Status()
   local ls = st.lastSync
-  statusLines[1]:SetText("Channel: " .. (st.channel and ("|cff40c040joined|r (#" .. st.channel .. ")") or "|cff808080off|r"))
+  local sc = ns.Scope()
+  statusLines[1]:SetText("Syncing with: " .. (sc == "public" and ("everyone · channel " .. (st.channel and ("|cff40c040joined|r (#" .. st.channel .. ")") or "|cff808080not joined|r"))
+    or sc == "guild" and (IsInGuild() and "guild members" or "|cffff6060guild only, but you're not in a guild|r") or "partner & trusted only"))
   statusLines[2]:SetText("Your last scan: " .. ns.Age(st.ownScan) .. (st.ownScan > 0 and (" · " .. (st.scanAH == "N" and "neutral" or "faction") .. " AH") or ""))
   statusLines[3]:SetText("Last sync: " .. (ls and (ns.Age(ls.at) .. " from " .. ls.from .. " · " .. ls.written .. " prices") or "never"))
   statusLines[4]:SetText("Transfer: " .. st.state)

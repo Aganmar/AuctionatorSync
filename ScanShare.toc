@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: ScanShare
 ## Notes: Shares Auctionator prices between your characters
-## Version: 0.5.0
+## Version: 0.6.0
 ## Dependencies: Auctionator
 ## OptionalDeps: EllesmereUI, EllesmereUIBlizzardSkin
 ## SavedVariables: ScanShareDB

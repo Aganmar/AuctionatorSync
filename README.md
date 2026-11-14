@@ -6,8 +6,13 @@ When anyone running ScanShare scans the AH, other users on the same realm and fa
 
 ## Features
 
-- **Automatic discovery** – a hidden realm/faction channel finds other users; no setup needed.
+- **Choose who you sync with**
+  - *Everyone* – a hidden realm/faction channel finds other users automatically;
+  - *Guild only* – announcements over the guild addon channel, guild members only;
+  - *Partner & trusted only* – no channel; talks directly to your partner and trusted list.
+  Your partner and trusted characters are always included.
 - **Partner mode** – optionally sync directly with one character (e.g. your bank alt).
+- **Pauses in instances** – in dungeons, raids, battlegrounds, arenas and scenarios it stops listening and sending entirely (on by default).
 - **Delta, compressed transfers** – only items seen since your newest data are sent (LibDeflate).
 - **Your scans win** – an incoming price is written only if it is newer than what you already have, dated to the day it was actually scanned.
 - **Neutral AH aware** – scans are tagged faction or neutral (goblin) AH; choose which you accept.
@@ -26,19 +31,20 @@ Copy the `ScanShare` folder into `World of Warcraft\_forever_\Interface\AddOns\`
 | `/scanshare` | Open the options page |
 | `/scanshare status` | Channel, scan age, last sync, transfer progress |
 | `/scanshare sync` | Ask for newer data now |
+| `/scanshare scope public\|guild\|trusted` | Who to sync with |
 | `/scanshare ah faction\|neutral\|any` | Which AH's data to accept |
+| `/scanshare instances` | Toggle pausing in dungeons / raids / battlegrounds |
 | `/scanshare partner [name\|clear]` | Direct sync partner (or target them) |
 | `/scanshare trust` / `untrust` `[name]` | Skip price checks for a player |
 | `/scanshare block` / `unblock` `[name]` | Never accept data from a player |
-| `/scanshare public` | Leave / rejoin the shared channel |
 | `/scanshare debug` | Show the channel and log every message |
 
 ## How it works
 
 | Message | Sent on | Meaning |
 |---|---|---|
-| `Q:<have>` | channel | "Anyone have data newer than this?" (on login / Sync now) |
-| `N:<scan>:<day>:<ah>` | channel | "I have data from this scan" (after a scan, or answering a query) |
+| `Q:<have>` | channel / guild / whisper | "Anyone have data newer than this?" (on login / Sync now) |
+| `N:<scan>:<day>:<ah>` | channel / guild / whisper | "I have data from this scan" (after a scan, or answering a query on the same medium) |
 | `H` / `A` | whisper | Partner hello / answer |
 | `R:<since>` | whisper | Request items seen since a day |
 | `W:<pos>` | whisper | You're queued |
