@@ -1,9 +1,12 @@
 name: Release
 
+# Publish a release on GitHub (tag e.g. v0.7.0); this builds the zip and attaches it.
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
+
+concurrency:
+  group: release-${{ github.event.release.tag_name }}
 
 permissions:
   contents: write
@@ -16,7 +19,8 @@ jobs:
 
       - name: Build add-on zip
         run: |
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${{ github.event.release.tag_name }}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           mkdir -p build/ScanShare/Media
           cp ScanShare.toc ScanShare.lua Options.lua LICENSE build/ScanShare/
           cp -r Libs build/ScanShare/
@@ -24,16 +28,8 @@ jobs:
           (cd build && zip -r "../ScanShare-${VERSION}.zip" ScanShare)
           echo "ZIP=ScanShare-${VERSION}.zip" >> "$GITHUB_ENV"
 
-      - name: Release notes from CHANGELOG.md
-        run: |
-          VER="${GITHUB_REF_NAME#v}"
-          awk -v v="## ${VER}" '$0==v{f=1;next} /^## /{if(f)exit} f' CHANGELOG.md > notes.md
-          [ -s notes.md ] || echo "See CHANGELOG.md" > notes.md
-          cat notes.md
-
-      - name: Publish GitHub release
+      - name: Attach zip to the release
         uses: softprops/action-gh-release@v2
         with:
-          name: ScanShare ${{ github.ref_name }}
-          body_path: notes.md
+          tag_name: ${{ env.VERSION }}
           files: ${{ env.ZIP }}
