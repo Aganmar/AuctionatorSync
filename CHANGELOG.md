@@ -6,6 +6,7 @@
 - Answers arrive on the same channel the question was asked on (fixes guild-only mode).
 - Options page: sync scope and instance pause settings.
 - Add-on icon in the in-game AddOns list.
+- Licensed under GPL-3.0.
 
 ## 0.5.0
 - Options page (*Options → AddOns → ScanShare*, or `/scanshare`) with status, settings, partner, trusted and blocked lists.

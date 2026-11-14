@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build add-on zip
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p build/ScanShare/Media
+          cp ScanShare.toc ScanShare.lua Options.lua LICENSE build/ScanShare/
+          cp -r Libs build/ScanShare/
+          cp Media/icon.tga build/ScanShare/Media/
+          (cd build && zip -r "../ScanShare-${VERSION}.zip" ScanShare)
+          echo "ZIP=ScanShare-${VERSION}.zip" >> "$GITHUB_ENV"
+
+      - name: Release notes from CHANGELOG.md
+        run: |
+          VER="${GITHUB_REF_NAME#v}"
+          awk -v v="## ${VER}" '$0==v{f=1;next} /^## /{if(f)exit} f' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "See CHANGELOG.md" > notes.md
+          cat notes.md
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ScanShare ${{ github.ref_name }}
+          body_path: notes.md
+          files: ${{ env.ZIP }}
