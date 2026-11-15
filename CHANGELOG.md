@@ -1,8 +1,7 @@
 # Changelog
 
 ## 0.7.0
-- **Renamed from ScanShare to ScanShare.** Slash command is now `/scanshare`; the options page is under *Options → AddOns → ScanShare*.
-- New addon folder, saved-settings name and message channel. ScanShare does not talk to the old ScanShare, so update every character.
+- New message channel and saved-settings format. Earlier versions don't sync with 0.7.0, so update every character.
 
 ## 0.6.0
 - **Sync with:** everyone (realm channel), guild only, or partner & trusted only. Your partner and trusted characters are always included.
