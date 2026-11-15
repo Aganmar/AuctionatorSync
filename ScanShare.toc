@@ -1,11 +1,11 @@
 ## Interface: 16001
 ## Title: ScanShare
-## Notes: Shares Auctionator prices between players
+## Notes: Shares Auctionator prices between players. Requires Auctionator.
 ## IconTexture: Interface\AddOns\ScanShare\Media\icon
 ## Category: Auction & Economy
 ## Author: Aganmar
 ## X-License: GPL-3.0
-## Version: 0.6.0
+## Version: 0.7.0
 ## Dependencies: Auctionator
 ## OptionalDeps: EllesmereUI, EllesmereUIBlizzardSkin
 ## SavedVariables: ScanShareDB

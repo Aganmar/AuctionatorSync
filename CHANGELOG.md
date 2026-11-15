@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0
+- **Renamed from ScanShare to ScanShare.** Slash command is now `/scanshare`; the options page is under *Options → AddOns → ScanShare*.
+- New addon folder, saved-settings name and message channel. ScanShare does not talk to the old ScanShare, so update every character.
+
 ## 0.6.0
 - **Sync with:** everyone (realm channel), guild only, or partner & trusted only. Your partner and trusted characters are always included.
 - **Pauses in instances:** dungeons, raids, battlegrounds, arenas and scenarios (on by default). While paused it neither listens nor sends.
