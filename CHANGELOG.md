@@ -3,6 +3,8 @@
 ## 0.7.1
 - A scan is only shared once Auctionator has finished it. Before, other players could sync while your scan was still running and get your old prices marked with the new scan's time.
 - Auctionator's full (replicate) scans now count as scans too.
+- Price data is held while Auctionator is scanning and resumes when the scan ends, to avoid disconnects during scans. Your own scans also don't start pulling data from others.
+- Sends at half the previous rate (about 0.5 KB/s).
 
 ## 0.7.0
 - New message channel and saved-settings format. Earlier versions don't sync with 0.7.0, so update every character.

@@ -114,11 +114,17 @@ local function unpack(kind, data)
 end
 
 -- ---------------------------------------------------------------- send queue (throttle-aware)
+local SEND_INTERVAL = 0.5   -- seconds between messages (~0.5 KB/s)
+local SCAN_HOLD_MAX = 900   -- never hold data longer than this, even if a scan never reports finishing
 local queue, ticker = {}, nil
+local scanningSince         -- GetTime() when an Auctionator scan started; nil when not scanning
+local function isScanning() return scanningSince ~= nil and GetTime() - scanningSince < SCAN_HOLD_MAX end
 local recentSent = {}   -- channel messages we sent recently (for echo detection)
 local function pump()
   local m = queue[1]
   if not m then if ticker then ticker:Cancel(); ticker = nil end; return end
+  -- Price data waits while Auctionator scans (scans are heavy on the connection); control messages still go.
+  if isScanning() and (m[1]:sub(1, 1) == "D" or m[1]:sub(1, 1) == "E") then return end
   local chan, target = "WHISPER", m[2]
   if target == "#guild" then
     if not IsInGuild() then table.remove(queue, 1); return end
@@ -142,7 +148,7 @@ local function send(msg, target, onSent)
   -- control messages jump ahead of queued data chunks
   if msg:sub(1, 1) ~= "D" and msg:sub(1, 1) ~= "E" then table.insert(queue, 1, { msg, target, onSent })
   else queue[#queue + 1] = { msg, target, onSent } end
-  if not ticker then pump(); if queue[1] then ticker = C_Timer.NewTicker(0.2, pump) end end
+  if not ticker then pump(); if queue[1] then ticker = C_Timer.NewTicker(SEND_INTERVAL, pump) end end
 end
 
 -- ---------------------------------------------------------------- protocol
@@ -258,7 +264,8 @@ local served = {}    -- short name -> last time we served them
 local function sendData(target, since)
   local db = priceDB()
   if not db then return end
-  if served[short(target)] and GetTime() - served[short(target)] < 120 then return end
+  local sv = served[short(target)]
+  if sv and GetTime() - sv.at < 120 and sv.scan == scanTime() then return end   -- same data sent recently
   if sending then
     for _, w in ipairs(waiting) do if short(w[1]) == short(target) then return end end
     if #waiting >= 5 then return end
@@ -282,16 +289,19 @@ local function sendData(target, since)
     if nxt then sendData(nxt[1], nxt[2]) end
     return
   end
-  served[short(target)] = GetTime()
+  local sentScan = scanTime()
+  served[short(target)] = { at = GetTime(), scan = sentScan }
   local kind, data = pack(table.concat(lines, "\n"))
   local total = math.ceil(#data / CHUNK)
-  sending = true
+  sending = target
   P(("Sending %d prices to %s (%d messages)"):format(n, Ambiguate(target, "none"), total))
   for i = 1, total do
     send(("D%d/%d%s%s"):format(i, total, kind, data:sub((i - 1) * CHUNK + 1, i * CHUNK)), target)
   end
-  send(("E:%d:%d"):format(scanTime(), n), target, function()
+  send(("E:%d:%d"):format(sentScan, n), target, function()
     sending = false
+    -- a scan finished while this was going out: offer the newer data
+    if scanTime() > sentScan then C_Timer.After(5, function() hello(target) end) end
     local nxt = table.remove(waiting, 1)
     if nxt then sendData(nxt[1], nxt[2]) end
   end)
@@ -379,7 +389,7 @@ local function apply(text, scan, sender, ah)
 end
 
 local function requestFrom(sender, ah)
-  if incoming then return end
+  if incoming or isScanning() then return end
   local db = priceDB()
   incoming = { from = sender, ah = (ah == "N") and "N" or "F", chunks = {}, got = 0, total = nil, started = GetTime(), active = GetTime(), patience = 45 }
   local mine = incoming
@@ -535,11 +545,27 @@ f:SetScript("OnEvent", function(_, ev, a1, a2, a3, a4)
         evs[#evs + 1] = FS.Events.ScanComplete
         map[FS.Events.ScanComplete] = function() return tonumber(sv().TimeOfLastReplicateScan) or 0 end
       end
+      local starts, ends = {}, {}
+      for _, E in ipairs({ IS and IS.Events, FS and FS.Events }) do
+        if E then
+          if E.ScanStart then starts[E.ScanStart] = true; evs[#evs + 1] = E.ScanStart end
+          if E.ScanFailed then ends[E.ScanFailed] = true; evs[#evs + 1] = E.ScanFailed end
+          if E.ScanComplete then ends[E.ScanComplete] = true end
+        end
+      end
       if #evs > 0 then
         watched = pcall(bus.Register, bus, { ReceiveEvent = function(_, ev)
+          if starts[ev] then
+            scanningSince = GetTime()
+            if DB.debug then P("Scan started - holding price data") end
+            -- tell whoever we're sending to that the rest will follow after the scan
+            if type(sending) == "string" then send("W:0", sending) end
+            return
+          end
+          if ends[ev] then scanningSince = nil end
           local t = map[ev] and map[ev]()
           if t and t > (DB.doneScan or 0) then DB.doneScan = t; if DB.debug then P("Scan finished") end end
-        end }, evs)
+        end }, evs) and next(map) ~= nil
       end
     end
     local A = Auctionator and Auctionator.API and Auctionator.API.v1
@@ -565,6 +591,7 @@ f:SetScript("OnEvent", function(_, ev, a1, a2, a3, a4)
     currentAH = (fac == "Alliance" or fac == "Horde") and "F" or "N"
   elseif ev == "AUCTION_HOUSE_CLOSED" then
     currentAH = nil
+    scanningSince = nil   -- a scan can't continue once the AH is closed
   elseif ev == "CHAT_MSG_ADDON" and a1 == PREFIX and a4 and not isMe(a4, a2) then
     if a3 == "WHISPER" then L("<-", "W", a4, a2); onMessage(a2, a4)
     elseif a3 == "CHANNEL" and scope() == "public" then L("<-", "CH", a4, a2); onChannel(a2, a4, false, "CHANNEL")
@@ -635,6 +662,7 @@ function ns.Status()
     lastSync = ls,
     held = held,
     state = paused and "paused (in an instance)" or incoming and ("receiving " .. incoming.got .. "/" .. (incoming.total or "?") .. " from " .. Ambiguate(incoming.from, "none"))
+      or (#queue > 0 and isScanning() and ("waiting for your scan to finish, " .. #queue .. " messages left"))
       or (#queue > 0 and ("sending, " .. #queue .. " messages left")) or "idle",
   }
 end
