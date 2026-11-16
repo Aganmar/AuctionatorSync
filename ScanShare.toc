@@ -5,7 +5,7 @@
 ## Category: Auction & Economy
 ## Author: Aganmar
 ## X-License: GPL-3.0
-## Version: 0.7.0
+## Version: 0.7.1
 ## Dependencies: Auctionator
 ## OptionalDeps: EllesmereUI, EllesmereUIBlizzardSkin
 ## SavedVariables: ScanShareDB

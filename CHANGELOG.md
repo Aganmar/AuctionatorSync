@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.1
+- A scan is only shared once Auctionator has finished it. Before, other players could sync while your scan was still running and get your old prices marked with the new scan's time.
+- Auctionator's full (replicate) scans now count as scans too.
+
 ## 0.7.0
 - New message channel and saved-settings format. Earlier versions don't sync with 0.7.0, so update every character.
 

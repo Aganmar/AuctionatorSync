@@ -39,8 +39,16 @@ local function priceDB()
   return Auctionator and Auctionator.Database and Auctionator.Database.db
 end
 
+-- Auctionator stamps a scan's time when the scan STARTS. Only advertise a scan once Auctionator
+-- has finished processing it (DB.doneScan), so nobody syncs half-scanned data under the new time.
+local function startedScan()
+  local sv = AUCTIONATOR_SAVEDVARS
+  if not sv then return 0 end
+  return math.max(tonumber(sv.TimeOfLastBrowseScan) or 0, tonumber(sv.TimeOfLastReplicateScan) or 0)
+end
+
 local function scanTime()
-  return (AUCTIONATOR_SAVEDVARS and tonumber(AUCTIONATOR_SAVEDVARS.TimeOfLastBrowseScan)) or 0
+  return (ScanShareDB and ScanShareDB.doneScan) or 0
 end
 
 local function entry(db, key)
@@ -511,12 +519,39 @@ f:SetScript("OnEvent", function(_, ev, a1, a2, a3, a4)
         end)
       end)
     end
+    if DB.doneScan == nil then DB.doneScan = startedScan() end   -- first run: assume the last scan finished
+    -- Mark a scan as done only when Auctionator reports it complete (a failed or interrupted scan never counts).
+    local bus = Auctionator and Auctionator.EventBus
+    local IS, FS = Auctionator and Auctionator.IncrementalScan, Auctionator and Auctionator.FullScan
+    local watched = false
+    if bus and bus.Register then
+      local evs, map = {}, {}
+      local sv = function() return AUCTIONATOR_SAVEDVARS or {} end
+      if IS and IS.Events and IS.Events.ScanComplete then
+        evs[#evs + 1] = IS.Events.ScanComplete
+        map[IS.Events.ScanComplete] = function() return tonumber(sv().TimeOfLastBrowseScan) or 0 end
+      end
+      if FS and FS.Events and FS.Events.ScanComplete then
+        evs[#evs + 1] = FS.Events.ScanComplete
+        map[FS.Events.ScanComplete] = function() return tonumber(sv().TimeOfLastReplicateScan) or 0 end
+      end
+      if #evs > 0 then
+        watched = pcall(bus.Register, bus, { ReceiveEvent = function(_, ev)
+          local t = map[ev] and map[ev]()
+          if t and t > (DB.doneScan or 0) then DB.doneScan = t; if DB.debug then P("Scan finished") end end
+        end }, evs)
+      end
+    end
     local A = Auctionator and Auctionator.API and Auctionator.API.v1
+    local lastPushed = scanTime()
     if A and A.RegisterForDBUpdate then
       pcall(A.RegisterForDBUpdate, "ScanShare", function()
+        if not watched then DB.doneScan = math.max(DB.doneScan or 0, startedScan()) end   -- fallback
         if incoming or paused then return end   -- our own writes don't trigger a push
         if currentAH then DB.scanAH = currentAH end
         C_Timer.After(3, function()
+          if scanTime() <= lastPushed then return end   -- only push when a scan has actually finished
+          lastPushed = scanTime()
           announce()
           local sent = {}
           if DB.partner then sent[short(DB.partner)] = true end
