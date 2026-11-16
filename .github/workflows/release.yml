@@ -2,7 +2,8 @@ name: Release
 
 # Publish a release on GitHub (tag e.g. v0.7.0): this builds the zip and a release.json
 # (flavor/interface metadata used by WowUp and other addon managers) and attaches both.
-# "Run workflow" re-attaches them to an existing release tag.
+# It also puts a download link for the zip at the top of the release notes.
+# "Run workflow" re-attaches them (and adds the link if missing) for an existing release tag.
 on:
   release:
     types: [published]
@@ -62,3 +63,13 @@ jobs:
           files: |
             ${{ env.ZIP }}
             release.json
+
+      - name: Add download link to release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${VERSION}/${ZIP}"
+          BODY=$(gh release view "$VERSION" --json body -q .body)
+          case "$BODY" in *"$URL"*) echo "Link already present"; exit 0;; esac
+          printf '### [Download %s](%s)\n\n%s\n' "$ZIP" "$URL" "$BODY" > notes.md
+          gh release edit "$VERSION" --notes-file notes.md
