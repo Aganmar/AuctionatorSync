@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.7.2
+- Fixed: price data went out in one burst instead of being paced, which could disconnect you after a scan. Sending is now limited to 2 messages a second, so a full sync takes about a minute.
+
 ## 0.7.1
 - A scan is only shared once Auctionator has finished it. Before, other players could sync while your scan was still running and get your old prices marked with the new scan's time.
 - Auctionator's full (replicate) scans now count as scans too.

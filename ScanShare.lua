@@ -117,6 +117,7 @@ end
 local SEND_INTERVAL = 0.5   -- seconds between messages (~0.5 KB/s)
 local SCAN_HOLD_MAX = 900   -- never hold data longer than this, even if a scan never reports finishing
 local queue, ticker = {}, nil
+local lastSent = 0          -- GetTime() of our last successful send
 local scanningSince         -- GetTime() when an Auctionator scan started; nil when not scanning
 local function isScanning() return scanningSince ~= nil and GetTime() - scanningSince < SCAN_HOLD_MAX end
 local recentSent = {}   -- channel messages we sent recently (for echo detection)
@@ -137,6 +138,7 @@ local function pump()
   local r = C_ChatInfo.SendAddonMessage(PREFIX, m[1], chan, target)
   if r == nil or r == true or r == 0 then
     table.remove(queue, 1)
+    lastSent = GetTime()
     if chan == "CHANNEL" then recentSent[m[1]] = GetTime() end
     L("->", chan == "CHANNEL" and "CH" or "W", chan == "CHANNEL" and "" or m[2], m[1])
     if m[3] then m[3]() end
@@ -148,7 +150,11 @@ local function send(msg, target, onSent)
   -- control messages jump ahead of queued data chunks
   if msg:sub(1, 1) ~= "D" and msg:sub(1, 1) ~= "E" then table.insert(queue, 1, { msg, target, onSent })
   else queue[#queue + 1] = { msg, target, onSent } end
-  if not ticker then pump(); if queue[1] then ticker = C_Timer.NewTicker(SEND_INTERVAL, pump) end end
+  -- one message per SEND_INTERVAL, never a burst: everything goes through the ticker
+  if not ticker then
+    ticker = C_Timer.NewTicker(SEND_INTERVAL, pump)
+    if GetTime() - lastSent >= SEND_INTERVAL then pump() end
+  end
 end
 
 -- ---------------------------------------------------------------- protocol
