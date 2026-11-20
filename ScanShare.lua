@@ -98,8 +98,22 @@ end
 
 local LD = LibStub and LibStub("LibDeflate", true)
 
+-- Raw deflate from the game's built-in compressor (C code, near-instant). Its output is the same
+-- format LibDeflate reads, so it goes out as kind "L" and older versions decode it unchanged.
+local function nativeDeflate()
+  return C_EncodingUtil and C_EncodingUtil.CompressString and C_EncodingUtil.DecompressString
+    and Enum and Enum.CompressionMethod and Enum.CompressionMethod.Deflate
+end
+
 local function pack(text)
-  if LD then return "L", LD:EncodeForWoWAddonChannel(LD:CompressDeflate(text, { level = 9 })) end
+  if LD then
+    if nativeDeflate() then
+      local ok, raw = pcall(C_EncodingUtil.CompressString, text, Enum.CompressionMethod.Deflate)
+      if ok and type(raw) == "string" and #raw > 0 then return "L", LD:EncodeForWoWAddonChannel(raw) end
+    end
+    -- pure-Lua fallback: level 5 is ~10x faster than 9 for ~2% more data
+    return "L", LD:EncodeForWoWAddonChannel(LD:CompressDeflate(text, { level = 5 }))
+  end
   if C_EncodingUtil and C_EncodingUtil.CompressString and C_EncodingUtil.EncodeBase64 then
     local ok, z = pcall(function() return C_EncodingUtil.EncodeBase64(C_EncodingUtil.CompressString(text)) end)
     if ok and z then return "Z", z end
@@ -109,7 +123,15 @@ end
 
 local function unpack(kind, data)
   if kind == "Z" then return C_EncodingUtil.DecompressString(C_EncodingUtil.DecodeBase64(data)) end
-  if kind == "L" then return LD:DecompressDeflate(LD:DecodeForWoWAddonChannel(data)) end
+  if kind == "L" then
+    local raw = LD:DecodeForWoWAddonChannel(data)
+    if not raw then return nil end
+    if nativeDeflate() then
+      local ok, out = pcall(C_EncodingUtil.DecompressString, raw, Enum.CompressionMethod.Deflate)
+      if ok and type(out) == "string" then return out end
+    end
+    return LD:DecompressDeflate(raw)
+  end
   return data
 end
 
@@ -267,6 +289,8 @@ end
 
 local waiting = {}   -- requests queued while a transfer is running
 local served = {}    -- short name -> last time we served them
+local BUILD_SLICE = 2000   -- database entries scanned per frame when building a transfer
+local finishData
 local function sendData(target, since)
   local db = priceDB()
   if not db then return end
@@ -279,17 +303,33 @@ local function sendData(target, since)
     send("W:" .. #waiting, target)
     return
   end
-  local lines, n = {}, 0
-  for key in pairs(db) do
-    local e = type(key) == "string" and entry(db, key)
-    if e and type(e.m) == "number" and e.m > 0 then
-      local d = lastDay(e)
-      if d and d >= since then
-        lines[#lines + 1] = key .. "\t" .. b36(e.m) .. "\t" .. b36(d); n = n + 1
+  -- Build the list a slice per frame so a big database doesn't freeze the game.
+  sending = target
+  local keys = {}
+  for key in pairs(db) do if type(key) == "string" then keys[#keys + 1] = key end end
+  local lines, n, i = {}, 0, 1
+  local function step()
+    if paused then sending = false; return end
+    local stop = math.min(i + BUILD_SLICE - 1, #keys)
+    for j = i, stop do
+      local key = keys[j]
+      local e = entry(db, key)
+      if e and type(e.m) == "number" and e.m > 0 then
+        local d = lastDay(e)
+        if d and d >= since then
+          lines[#lines + 1] = key .. "\t" .. b36(e.m) .. "\t" .. b36(d); n = n + 1
+        end
       end
     end
+    i = stop + 1
+    if i <= #keys then C_Timer.After(0, step) else finishData(target, lines, n) end
   end
+  step()
+end
+
+finishData = function(target, lines, n)
   if n == 0 then
+    sending = false
     send(("E:%d:0"):format(scanTime()), target)
     local nxt = table.remove(waiting, 1)
     if nxt then sendData(nxt[1], nxt[2]) end

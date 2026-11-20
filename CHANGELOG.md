@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.7.3
+- No more freeze when someone requests your prices: data is compressed with the game's built-in compression (near-instant) instead of in Lua, and the price list is built over several frames. Still compatible with earlier 0.7 versions.
+
 ## 0.7.2
 - Fixed: price data went out in one burst instead of being paced, which could disconnect you after a scan. Sending is now limited to 2 messages a second, so a full sync takes about a minute.
 
