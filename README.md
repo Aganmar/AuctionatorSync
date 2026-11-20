@@ -15,11 +15,12 @@ When anyone running ScanShare scans the AH, other users on the same realm and fa
   Your partner and trusted characters are always included.
 - **Partner mode** – optionally sync directly with one character (e.g. your bank alt).
 - **Pauses in instances** – in dungeons, raids, battlegrounds, arenas and scenarios it stops listening and sending entirely (on by default).
-- **Delta, compressed transfers** – only items seen since your newest data are sent (LibDeflate).
+- **Delta, compressed transfers** – only items seen since your newest data are sent, compressed with the game's built-in compression (LibDeflate as fallback), without freezing the game.
+- **Autoscan reset** – after a sync from your partner or trusted characters, Auctionator's autoscan waits as if you'd scanned yourself (optional for everyone else).
 - **Your scans win** – an incoming price is written only if it is newer than what you already have, dated to the day it was actually scanned.
 - **Neutral AH aware** – scans are tagged faction or neutral (goblin) AH; choose which you accept.
 - **Data poisoning protection**
-- **Rate limited** – throttle-aware send queue, request queueing and flood limits on the channel.
+- **Rate limited** – paced send queue (2 messages a second), request queueing and flood limits on the channel.
 - **Options page** – *Options → AddOns → ScanShare* (or `/scanshare`), with EllesmereUI styling when installed.
 
 ## Install
