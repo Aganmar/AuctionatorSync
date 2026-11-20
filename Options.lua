@@ -75,6 +75,9 @@ end
 y = y - 22
 text(panel, "GameFontDisableSmall", L + 8, y, "Your partner and trusted characters are always included."); y = y - 22
 check(panel, "Pause in dungeons, raids & battlegrounds", L + 4, y, function() return ns.GetDB().pauseInstances ~= false end, ns.SetPauseInstances); y = y - 26
+text(panel, "GameFontHighlight", L + 8, y - 4, "Reset autoscan after a sync from:")
+check(panel, "Partner & trusted", L + 260, y, function() return ns.GetDB().autoscanTrusted ~= false end, ns.SetAutoscanTrusted)
+check(panel, "Anyone", L + 410, y, function() return ns.GetDB().autoscanAny end, ns.SetAutoscanAny); y = y - 26
 check(panel, "Debug (show the channel and log every message in chat)", L + 4, y, function() return ns.GetDB().debug end, ns.SetDebug); y = y - 32
 
 text(panel, "GameFontHighlight", L + 8, y - 4, "Accept AH data from:")
@@ -99,7 +102,7 @@ local partnerText = text(panel, "GameFontHighlightSmall", L + 8, y - 26)
 y = y - 52
 
 -- Lists (two columns)
-local MAXROWS = 8
+local MAXROWS = 7
 local function listBlock(x, y0, title, hint, list)
   local block = { rows = {} }
   text(panel, "GameFontNormal", x, y0, title)

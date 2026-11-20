@@ -2,6 +2,8 @@
 
 ## 0.7.3
 - No more freeze when someone requests your prices: data is compressed with the game's built-in compression (near-instant) instead of in Lua, and the price list is built over several frames. Still compatible with earlier 0.7 versions.
+- Quieter chat: one line when a transfer starts and one when it finishes (progress lines only with debug on).
+- New option: reset Auctionator's autoscan timer after a sync, as if you'd scanned when the sender did. On by default for your partner and trusted characters, off by default for everyone else.
 
 ## 0.7.2
 - Fixed: price data went out in one burst instead of being paced, which could disconnect you after a scan. Sending is now limited to 2 messages a second, so a full sync takes about a minute.

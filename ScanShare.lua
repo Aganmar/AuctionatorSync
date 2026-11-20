@@ -44,7 +44,21 @@ end
 local function startedScan()
   local sv = AUCTIONATOR_SAVEDVARS
   if not sv then return 0 end
-  return math.max(tonumber(sv.TimeOfLastBrowseScan) or 0, tonumber(sv.TimeOfLastReplicateScan) or 0)
+  local browse = tonumber(sv.TimeOfLastBrowseScan) or 0
+  if ScanShareDB and ScanShareDB.autoscanSet == browse then browse = 0 end   -- set by us, not a real scan
+  return math.max(browse, tonumber(sv.TimeOfLastReplicateScan) or 0)
+end
+
+-- After a sync, push back Auctionator's autoscan as if we'd scanned when the sender did.
+local function resetAutoscan(scan)
+  local sv = AUCTIONATOR_SAVEDVARS
+  if not sv or not scan then return end
+  scan = math.min(scan, time())
+  if scan > (tonumber(sv.TimeOfLastBrowseScan) or 0) then
+    sv.TimeOfLastBrowseScan = scan
+    ScanShareDB.autoscanSet = scan
+    return true
+  end
 end
 
 local function scanTime()
@@ -519,10 +533,11 @@ local function onMessage(msg, sender)
       if total and total > MAX_CHUNKS then incoming = nil; P("Ignored oversized transfer from " .. Ambiguate(sender, "none")) end
       return
     end
+    if not incoming.total then P(("Receiving prices from %s..."):format(Ambiguate(sender, "none"))) end
     if not incoming.chunks[i] then incoming.got = incoming.got + 1 end
     incoming.active, incoming.patience = GetTime(), 45
     incoming.chunks[i], incoming.total, incoming.kind = data, total, enc
-    if total >= 20 and i % 50 == 0 then P(("Receiving %d/%d"):format(incoming.got, total)) end
+    if DB.debug and total >= 20 and i % 50 == 0 then P(("Receiving %d/%d"):format(incoming.got, total)) end
   elseif kind == "E" then
     if not (incoming and short(incoming.from) == short(sender)) then return end
     local scan, count = msg:match("^E:(%d+):(%d+)")
@@ -536,8 +551,10 @@ local function onMessage(msg, sender)
     local written, skipped, held = apply(text, scan, sender, inc.ah)
     if not written then return end
     DB.lastSync = { from = Ambiguate(sender, "none"), at = time(), scan = scan, written = written }
-    P(("Synced from %s: %d updated, %d already newer%s"):format(Ambiguate(sender, "none"), written, skipped,
-      held > 0 and (", " .. held .. " held for confirmation") or ""))
+    local reset = written > 0 and ((trusted(sender) and DB.autoscanTrusted ~= false) or DB.autoscanAny)
+      and resetAutoscan(scan)
+    P(("Synced from %s: %d updated, %d already newer%s%s"):format(Ambiguate(sender, "none"), written, skipped,
+      held > 0 and (", " .. held .. " held for confirmation") or "", reset and ", autoscan timer reset" or ""))
   end
 end
 
@@ -670,6 +687,8 @@ local function setPaused(p)
   end
 end
 ns.IsPaused = function() return paused end
+ns.SetAutoscanTrusted = function(on) DB.autoscanTrusted = on and true or false end
+ns.SetAutoscanAny = function(on) DB.autoscanAny = on and true or false end
 ns.SetPauseInstances = function(on) DB.pauseInstances = on and true or false; setPaused(shouldPause()) end
 f:RegisterEvent("PLAYER_ENTERING_WORLD")
 f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
